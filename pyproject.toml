@@ -4,11 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bank-system"
-version = "0.1.0"
+version = "0.7.0"
 description = "Система банківських рахунків для лабораторної роботи"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -21,7 +24,7 @@ dev = [
 where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests/integration/test_bank_persistence.py"]
 asyncio_mode = "strict"
 markers = [
     "integration: mark test as integration test",
@@ -70,6 +73,7 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "bank_system.analytics"
 ignore_errors = true
+
 [[tool.mypy.overrides]]
 module = "yaml.*"
 ignore_missing_imports = true

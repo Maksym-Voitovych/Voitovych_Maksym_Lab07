@@ -1,36 +1,57 @@
-from collections.abc import Iterator
-from dataclasses import dataclass
-from pathlib import Path
-import logging
+import sqlite3
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+from bank_system.models import Account, Transaction
 
-from bank_system.exceptions import RecordValidationError
-from bank_system.models import BankAccount
-from bank_system.readers import read_csv_rows
-from bank_system.validators import parse_bank_account
+class BankService:
+    def __init__(self, session: Session) -> None:
+        self.session = session
 
-logger = logging.getLogger(__name__)
+    def get_total_funds(self) -> float:
+        statement = select(func.sum(Account.balance))
+        result = self.session.scalar(statement)
+        return float(result) if result else 0.0
 
-@dataclass
-class ImportStatistics:
-    total: int = 0
-    valid: int = 0
-    invalid: int = 0
-
-def import_accounts(
-    path: Path,
-    *,
-    skip_invalid: bool,
-    statistics: ImportStatistics,
-) -> Iterator[BankAccount]:
-    for line_number, row in read_csv_rows(path):
-        statistics.total += 1
+    def transfer_money(self, sender_number: str, receiver_number: str, amount: float) -> None:
+        """Транзакційна операція з атомарністю (commit / rollback)."""
+        if amount <= 0:
+            raise ValueError("Transfer amount must be positive.")
+        
         try:
-            account = parse_bank_account(row, line_number=line_number)
-        except RecordValidationError as error:
-            statistics.invalid += 1
-            logger.warning("Invalid record at line %s: %s", error.line_number, error)
-            if skip_invalid:
-                continue
+            sender = self.session.scalar(select(Account).where(Account.account_number == sender_number))
+            receiver = self.session.scalar(select(Account).where(Account.account_number == receiver_number))
+
+            if not sender or not receiver:
+                raise ValueError("Sender or receiver account not found.")
+            if sender.balance < amount:
+                raise ValueError("Insufficient funds for transfer.")
+
+            sender.balance -= amount
+            receiver.balance += amount
+
+            tx = Transaction(
+                sender_account_id=sender.id,
+                receiver_account_id=receiver.id,
+                amount=amount,
+            )
+            self.session.add(tx)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
             raise
-        statistics.valid += 1
-        yield account
+
+
+def find_account_by_number_db_api(database_path: str, account_number: str) -> tuple | None:
+    """Приклад використання стандартного DB-API із параметризацією."""
+    with sqlite3.connect(database_path) as connection:
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            SELECT accounts.account_number, accounts.balance, clients.name
+            FROM accounts
+            JOIN clients ON accounts.client_id = clients.id
+            WHERE accounts.account_number = ?
+            """,
+            (account_number,),
+        )
+        return cursor.fetchone()
